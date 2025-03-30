@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>게시판</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f9f9f9;
+            color: #333;
+            margin: 0;
+            padding: 0;
+        }
+        h1 {
+            text-align: center;
+            color: #007bff;
+            margin-top: 20px;
+        }
+        h2{
+            text-align: center;
+            color: #333;
+            margin-top: 20px;
+        }
+        #auth-buttons, #logout-button, #create-post-button {
+            text-align: center;
+            margin: 10px 0;
+        }
+        #posts {
+            list-style-type: none;
+            padding: 0;
+            max-width: 600px;
+            margin: 20px auto; /* 가운데 정렬 */
+        }
+        #posts li {
+            background-color: #fff;
+            border: 1px solid #ddd;
+            margin: 15px 0; /* 간격 조정 */
+            padding: 20px; /* 패딩 증가 */
+            border-radius: 10px; /* 둥근 모서리 */
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); /* 그림자 강화 */
+            transition: transform 0.2s, box-shadow 0.2s; /* 호버 효과 추가 */
+        }
+        #posts li:hover {
+            transform: translateY(-5px); /* 살짝 위로 이동 */
+            box-shadow: 0 6px 10px rgba(0, 0, 0, 0.15); /* 호버 시 그림자 강화 */
+        }
+        #posts li .title {
+            font-weight: bold;
+            font-size: 1.2em;
+            margin-bottom: 10px;
+            color: #007bff;
+        }
+        #posts li .content {
+            margin: 10px 0;
+            color: #555;
+            line-height: 1.5;
+        }
+        #posts li .meta {
+            font-size: 0.9em;
+            color: #888;
+            margin-top: 10px;
+        }
+        #posts li .author {
+            font-size: 0.9em;
+            color: #555;
+            margin-top: 5px;
+        }
+        #posts li .like-btn, #posts li .dislike-btn, #posts li .unlike-btn, #posts li .undislike-btn {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 8px 15px; /* 버튼 크기 증가 */
+            border-radius: 3px;
+            cursor: pointer;
+            margin-top: 10px;
+            margin-right: 5px;
+            font-size: 0.9em; /* 버튼 텍스트 크기 조정 */
+        }
+        #posts li .like-btn:hover, #posts li .dislike-btn:hover, #posts li .unlike-btn:hover, #posts li .undislike-btn:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <h1>게시판</h1>
+    <div id="auth-buttons">
+        <a href="/sign-up" id="sign-up-btn">회원가입</a> | <a href="/login" id="login-btn">로그인</a>
+    </div>
+    <div id="logout-button" style="display: none;">
+        <button id="logout-btn">로그아웃</button>
+    </div>
+
+    <!-- 게시물 작성 버튼 -->
+    <div id="create-post-button" style="display: none;">
+        <a href="/create-post" id="create-post-btn">게시물 작성</a>
+    </div>
+
+    <h2>게시글 목록</h2>
+    <ul id="posts"></ul>
+
+    <script>
+        // 로그인 상태 확인
+        fetch('/auth/status')
+            .then(response => response.json())
+            .then(data => {
+                if (data.loggedIn) {
+                    document.getElementById('auth-buttons').style.display = 'none';
+                    document.getElementById('logout-button').style.display = 'block';
+                    document.getElementById('create-post-button').style.display = 'block';
+                } else {
+                    document.getElementById('auth-buttons').style.display = 'block';
+                    document.getElementById('logout-button').style.display = 'none';
+                    document.getElementById('create-post-button').style.display = 'none';
+                }
+            });
+
+        // 로그아웃 버튼 클릭 이벤트
+        document.getElementById('logout-btn').addEventListener('click', () => {
+            fetch('/logout', { method: 'POST' })
+                .then(response => {
+                    if (response.ok) {
+                        document.getElementById('auth-buttons').style.display = 'block';
+                        document.getElementById('logout-button').style.display = 'none';
+                        document.getElementById('create-post-button').style.display = 'none';
+                    } else {
+                        console.error('로그아웃 실패');
+                    }
+                })
+                .catch(error => console.error('로그아웃 요청 중 오류 발생:', error));
+        });
+
+        // 게시글 목록을 불러오는 기능
+        fetch('/posts')
+            .then(response => response.json())
+            .then(posts => {
+                const postsList = document.getElementById('posts');
+                posts.forEach(post => {
+                    const li = document.createElement('li');
+                    li.innerHTML = `
+                        <div class="title">${post.title}</div>
+                        <div class="content">${post.content}</div>
+                        <div class="author">작성자: ${post.author || '알 수 없음'}</div>
+                        <div class="meta">
+                            작성일: ${new Date(post.created_at).toLocaleString()} | 
+                            좋아요: <span id="likes-${post._id}">${post.likes}</span> | 
+                            싫어요: <span id="dislikes-${post._id}">${post.dislikes || 0}</span>
+                        </div>
+                        <button class="like-btn" onclick="toggleLikePost('${post._id}')">좋아요</button>
+                        <button class="dislike-btn" onclick="toggleDislikePost('${post._id}')">싫어요</button>
+                    `;
+                    postsList.appendChild(li);
+                });
+            });
+
+        // 좋아요 버튼 클릭 이벤트
+        function toggleLikePost(postId) {
+            fetch(`/post/${postId}/like`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+            })
+                .then((response) => response.json())
+                .then((data) => {
+                    if (data.message) {
+                        alert(data.message); // 서버에서 반환된 메시지 출력
+                        location.reload(); // 페이지 새로고침
+                    } else {
+                        alert(data.error || "좋아요 요청 중 오류가 발생했습니다.");
+                    }
+                })
+                .catch((error) => console.error("좋아요 요청 중 오류 발생:", error));
+        }
+
+        // 싫어요 버튼 클릭 이벤트
+        function toggleDislikePost(postId) {
+            fetch(`/post/${postId}/dislike`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+            })
+                .then((response) => response.json())
+                .then((data) => {
+                    if (data.message) {
+                        alert(data.message); // 서버에서 반환된 메시지 출력
+                        location.reload(); // 페이지 새로고침
+                    } else {
+                        alert(data.error || "싫어요 요청 중 오류가 발생했습니다.");
+                    }
+                })
+                .catch((error) => console.error("싫어요 요청 중 오류 발생:", error));
+        }
+    </script>
+</body>
+</html>
