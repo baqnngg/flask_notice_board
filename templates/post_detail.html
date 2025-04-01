@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>게시글 상세</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f9f9f9;
+            color: #333;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            max-width: 700px;
+            margin: 30px auto;
+            background-color: #fff;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+        .title {
+            font-size: 2em;
+            font-weight: bold;
+            color: #007bff;
+            margin-bottom: 15px;
+        }
+        .content {
+            margin: 20px 0;
+            line-height: 1.8;
+            color: #555;
+            font-size: 1.1em;
+        }
+        .meta {
+            font-size: 0.9em;
+            color: #888;
+            margin-top: 15px;
+            border-top: 1px solid #ddd;
+            padding-top: 10px;
+            margin-bottom: 12px;
+        }
+        .actions button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-right: 10px;
+            font-size: 1em;
+        }
+        .actions button:hover {
+            background-color: #0056b3;
+        }
+        .back-link {
+            display: block;
+            margin-top: 30px;
+            text-align: center;
+            color: #007bff;
+            text-decoration: none;
+            font-size: 1em;
+        }
+        .back-link:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="title" id="post-title">로딩 중...</div>
+        <div class="content" id="post-content"></div>
+        <div class="meta" id="post-meta"></div>
+        <div class="actions">
+            <button onclick="likePost()">좋아요</button>
+            <button onclick="dislikePost()">싫어요</button>
+        </div>
+        <a href="/" class="back-link">← 게시글 목록으로 돌아가기</a>
+    </div>
+
+    <script>
+        const postId = "{{ post_id }}";
+
+        // 게시글 상세 정보 불러오기
+        fetch(`/post/${postId}`)
+            .then(response => response.json())
+            .then(post => {
+                if (post.error) {
+                    alert(post.error);
+                    window.location.href = "/";
+                } else {
+                    document.getElementById("post-title").innerText = post.title;
+                    document.getElementById("post-content").innerText = post.content;
+                    document.getElementById("post-meta").innerText = `작성자: ${post.author} | 작성일: ${new Date(post.created_at).toLocaleString()} | 좋아요: ${post.likes} | 싫어요: ${post.dislikes}`;
+                }
+            })
+            .catch(error => {
+                console.error("게시글 정보를 불러오는 중 오류 발생:", error);
+                alert("게시글 정보를 불러오는 중 오류가 발생했습니다.");
+                window.location.href = "/";
+            });
+
+        // 좋아요 기능
+        function likePost() {
+            fetch(`/post/${postId}/like`, { method: "POST" })
+                .then(response => response.json())
+                .then(data => {
+                    alert(data.message || data.error);
+                    location.reload();
+                })
+                .catch(error => console.error("좋아요 요청 중 오류 발생:", error));
+        }
+
+        // 싫어요 기능
+        function dislikePost() {
+            fetch(`/post/${postId}/dislike`, { method: "POST" })
+                .then(response => response.json())
+                .then(data => {
+                    alert(data.message || data.error);
+                    location.reload();
+                })
+                .catch(error => console.error("싫어요 요청 중 오류 발생:", error));
+        }
+    </script>
+</body>
+</html>

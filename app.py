@@ -11,9 +11,9 @@ load_dotenv()
 
 app = Flask(__name__)
 app.config["MONGO_URI"] = os.getenv("MONGO_URI")
-app.config["SECRET_KEY"] = os.getenv("SECRET_KEY")  # 세션 키 설정
+app.config["SECRET_KEY"] = os.getenv("SECRET_KEY")
 mongo = PyMongo(app)
-db = mongo.db  # DB 객체
+db = mongo.db
 
 
 @app.route("/")
@@ -62,7 +62,6 @@ def create_post_page():
     if "user_id" not in session:
         return render_template("login.html")  # 로그인하지 않은 경우 로그인 페이지로 리다이렉트
     return render_template("create_post.html")
-
 @app.route("/post", methods=["POST"])
 def create_post():
     if "user_id" not in session:
@@ -103,9 +102,18 @@ def get_post(post_id):
         return jsonify({"error": "게시글을 찾을 수 없습니다."}), 404
 
     post["_id"] = str(post["_id"])
+    post["created_at"] = post["created_at"].isoformat()  # ISO 8601 형식으로 변환
     return jsonify(post)
 
-# 좋아요 기능 (중복 방지 추가)
+# 게시글 상세 페이지 렌더링
+@app.route("/post/<post_id>/view")
+def view_post_page(post_id):
+    post = db.posts.find_one({"_id": ObjectId(post_id)})
+    if not post:
+        return render_template("404.html"), 404  # 게시글이 없으면 404 페이지로 이동
+    return render_template("post_detail.html", post_id=post_id)
+
+# 좋아요 기능
 @app.route("/post/<post_id>/like", methods=["POST"])
 def like_post(post_id):
     if "user_id" not in session:
@@ -117,9 +125,19 @@ def like_post(post_id):
 
     user_id = session["user_id"]
 
-    # 사용자가 이미 좋아요를 눌렀는지 확인
     if user_id in post.get("liked_users", []):
-        return jsonify({"error": "이미 좋아요를 눌렀습니다."}), 400
+        db.posts.update_one(
+            {"_id": ObjectId(post_id)},
+            {"$inc": {"likes": -1}, "$pull": {"liked_users": user_id}}
+        )
+        return jsonify({"message": "좋아요 취소됨!"}), 200
+
+    if user_id in post.get("disliked_users", []):
+        # db.posts.update_one(
+        #     {"_id": ObjectId(post_id)},
+        #     {"$inc": {"dislikes": -1}, "$pull": {"disliked_users": user_id}}
+        # )
+        return jsonify({"message": "이미 싫어요를 누름!"}), 200
 
     # 좋아요 증가 및 유저 목록 업데이트
     db.posts.update_one(
@@ -128,7 +146,7 @@ def like_post(post_id):
     )
     return jsonify({"message": "좋아요 추가됨!"}), 200
 
-# 싫어요 기능 추가
+# 싫어요 기능
 @app.route("/post/<post_id>/dislike", methods=["POST"])
 def dislike_post(post_id):
     if "user_id" not in session:
@@ -139,10 +157,20 @@ def dislike_post(post_id):
         return jsonify({"error": "게시글을 찾을 수 없습니다."}), 404
 
     user_id = session["user_id"]
-
-    # 사용자가 이미 싫어요를 눌렀는지 확인
+    
     if user_id in post.get("disliked_users", []):
-        return jsonify({"error": "이미 싫어요를 눌렀습니다."}), 400
+        db.posts.update_one(
+            {"_id": ObjectId(post_id)},
+            {"$inc": {"dislikes": -1}, "$pull": {"disliked_users": user_id}}
+        )
+        return jsonify({"message": "싫어요 취소됨!"}), 200
+    
+    if user_id in post.get("liked_users", []):
+        # db.posts.update_one(
+        #     {"_id": ObjectId(post_id)},
+        #     {"$inc": {"likes": -1}, "$pull": {"liked_users": user_id}}
+        # )
+        return jsonify({"message": "이미 좋아요를 누름!"}), 200
 
     # 싫어요 증가 및 유저 목록 업데이트
     db.posts.update_one(
@@ -151,9 +179,9 @@ def dislike_post(post_id):
     )
     return jsonify({"message": "싫어요 추가됨!"}), 200
 
-# 좋아요 취소 기능
-@app.route("/post/<post_id>/like", methods=["DELETE"])
-def unlike_post(post_id):
+# 게시물 삭제
+@app.route("/post/<post_id>", methods=["DELETE"])
+def delete_post(post_id):
     if "user_id" not in session:
         return jsonify({"error": "로그인이 필요합니다."}), 401
 
@@ -161,109 +189,12 @@ def unlike_post(post_id):
     if not post:
         return jsonify({"error": "게시글을 찾을 수 없습니다."}), 404
 
-    user_id = session["user_id"]
+    # 작성자 확인
+    if post["author_id"] != session["user_id"]:
+        return jsonify({"error": "게시글을 삭제할 권한이 없습니다."}), 403
 
-    # 사용자가 좋아요를 누르지 않았는지 확인
-    if user_id not in post.get("liked_users", []):
-        return jsonify({"error": "좋아요를 누르지 않았습니다."}), 400
-
-    # 좋아요 감소 및 유저 목록 업데이트
-    db.posts.update_one(
-        {"_id": ObjectId(post_id)},
-        {"$inc": {"likes": -1}, "$pull": {"liked_users": user_id}}
-    )
-    return jsonify({"message": "좋아요 취소됨!"}), 200
-
-# 싫어요 취소 기능
-@app.route("/post/<post_id>/dislike", methods=["DELETE"])
-def undislike_post(post_id):
-    if "user_id" not in session:
-        return jsonify({"error": "로그인이 필요합니다."}), 401
-
-    post = db.posts.find_one({"_id": ObjectId(post_id)})
-    if not post:
-        return jsonify({"error": "게시글을 찾을 수 없습니다."}), 404
-
-    user_id = session["user_id"]
-
-    # 사용자가 싫어요를 누르지 않았는지 확인
-    if user_id not in post.get("disliked_users", []):
-        return jsonify({"error": "싫어요를 누르지 않았습니다."}), 400
-
-    # 싫어요 감소 및 유저 목록 업데이트
-    db.posts.update_one(
-        {"_id": ObjectId(post_id)},
-        {"$inc": {"dislikes": -1}, "$pull": {"disliked_users": user_id}}
-    )
-    return jsonify({"message": "싫어요 취소됨!"}), 200
-
-# 좋아요 토글 기능
-@app.route("/post/<post_id>/like", methods=["POST"])
-def toggle_like_post(post_id):
-    if "user_id" not in session:
-        return jsonify({"error": "로그인이 필요합니다."}), 401
-
-    post = db.posts.find_one({"_id": ObjectId(post_id)})
-    if not post:
-        return jsonify({"error": "게시글을 찾을 수 없습니다."}), 404
-
-    user_id = session["user_id"]
-
-    # 사용자가 이미 좋아요를 눌렀는지 확인
-    if user_id in post.get("liked_users", []):
-        # 좋아요 취소
-        db.posts.update_one(
-            {"_id": ObjectId(post_id)},
-            {"$inc": {"likes": -1}, "$pull": {"liked_users": user_id}}
-        )
-        return jsonify({"message": "좋아요 취소됨!"}), 200
-    else:
-        # 싫어요를 누른 상태라면 취소
-        if user_id in post.get("disliked_users", []):
-            db.posts.update_one(
-                {"_id": ObjectId(post_id)},
-                {"$inc": {"dislikes": -1}, "$pull": {"disliked_users": user_id}}
-            )
-        # 좋아요 추가
-        db.posts.update_one(
-            {"_id": ObjectId(post_id)},
-            {"$inc": {"likes": 1}, "$push": {"liked_users": user_id}}
-        )
-        return jsonify({"message": "좋아요 추가됨!"}), 200
-
-# 싫어요 토글 기능
-@app.route("/post/<post_id>/dislike", methods=["POST"])
-def toggle_dislike_post(post_id):
-    if "user_id" not in session:
-        return jsonify({"error": "로그인이 필요합니다."}), 401
-
-    post = db.posts.find_one({"_id": ObjectId(post_id)})
-    if not post:
-        return jsonify({"error": "게시글을 찾을 수 없습니다."}), 404
-
-    user_id = session["user_id"]
-
-    # 사용자가 이미 싫어요를 눌렀는지 확인
-    if user_id in post.get("disliked_users", []):
-        # 싫어요 취소
-        db.posts.update_one(
-            {"_id": ObjectId(post_id)},
-            {"$inc": {"dislikes": -1}, "$pull": {"disliked_users": user_id}}
-        )
-        return jsonify({"message": "싫어요 취소됨!"}), 200
-    else:
-        # 좋아요를 누른 상태라면 취소
-        if user_id in post.get("liked_users", []):
-            db.posts.update_one(
-                {"_id": ObjectId(post_id)},
-                {"$inc": {"likes": -1}, "$pull": {"liked_users": user_id}}
-            )
-        # 싫어요 추가
-        db.posts.update_one(
-            {"_id": ObjectId(post_id)},
-            {"$inc": {"dislikes": 1}, "$push": {"disliked_users": user_id}}
-        )
-        return jsonify({"message": "싫어요 추가됨!"}), 200
+    db.posts.delete_one({"_id": ObjectId(post_id)})
+    return jsonify({"message": "게시글이 삭제되었습니다."}), 200
 
 # 로그아웃
 @app.route("/logout", methods=["POST"])
